@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { Sphere } from 'three';
 interface IMode7DanmakuContentInterface {
     startX: number;
     startY: number;
@@ -93,6 +94,21 @@ let loader = {
             };
         });
     },
+    assign(...args: any[]): any {
+        if (args.length <= 1) return args[0];
+        let output = args[0] != null ? Object(args[0]) : {};
+        args.forEach((value, index) => {
+            if (index === 0) return;
+            if (value != null) {
+                for (let prop in value) {
+                    if (value.hasOwnProperty(prop)) {
+                        output[prop] = value[prop];
+                    }
+                }
+            }
+        });
+        return output;
+    }
 };
 let elements = {
     mainBox: document.querySelector(".main-box"),
@@ -106,7 +122,6 @@ let elements = {
     fullScreenBtn: document.querySelector(".full-screen"),
     input: document.querySelector(".input") as HTMLInputElement,
     sendBtn: document.querySelector(".send-btn"),
-    videoControls: document.querySelector(".video-controls") as HTMLDivElement,
     selectOption: document.querySelector(".render-style"),
     danmakuPlayer: document.querySelector(".danmaku-player") as HTMLDivElement,
     advDanmakuPlayer: document.querySelector(".adv-danmaku-player") as HTMLCanvasElement,
@@ -114,11 +129,11 @@ let elements = {
 let danmaku: ThreeManager;
 loader.parse("./1234.xml").then(function(danmakuDataArray: IDanmakuDataInterface[]) {
     danmaku = new ThreeManager(elements.advDanmakuPlayer, elements.video, danmakuDataArray);
+    danmaku.textGeometry();
 });
 elements.playPauseBtn.addEventListener("click", function() {
     if (elements.video.paused === true) {
         elements.video.play();
-        // danmaku.loadText();
         danmaku.render();
         elements.playPauseBtn.classList.add("pause-btn");
         elements.playPauseBtn.classList.remove("play-btn");
@@ -177,13 +192,6 @@ elements.fullScreenBtn.addEventListener("click", function() {
     }
 });
 
-elements.mainBox.addEventListener("mouseover", function() {
-    elements.videoControls.style.opacity = "1";
-});
-elements.mainBox.addEventListener("mouseout", function() {
-    elements.videoControls.style.opacity = "0";
-});
-
 class ThreeManager{
     renderCanvas: HTMLCanvasElement;
     video: HTMLVideoElement;
@@ -207,9 +215,8 @@ class ThreeManager{
         this.renderCanvasHeight = this.renderCanvas.parentElement.clientHeight;
         this.renderCanvas.width = this.renderCanvasWidth;
         this.renderCanvas.height = this.renderCanvasHeight;
-        this.danmakuArray = this.danmakuDataArray.map(danmaku => new ThreeRender(danmaku, this));
         this.renderer = new THREE.WebGLRenderer({
-            antialias: true,
+            antialias: false,
             canvas: this.renderCanvas,
             alpha: true
         });
@@ -223,52 +230,12 @@ class ThreeManager{
             3000,
         );
         this.perspectiveCamera.position.z = Math.min(this.renderCanvasWidth, this.renderCanvasHeight) / 2;
-    }
-
-    loadText(): void{
-        for(let i = 0; i < this.danmakuArray.length ; i++){
-            let danmaku = this.danmakuArray[i];
-            if (!danmaku.renderFlag && this.video.currentTime >= danmaku.danmakuData.playTime) {
-                if (!danmaku.isInited) {
-                    danmaku.init();
-                    this.textFontLoader.load('fonts/Arial_Regular.json', font => {
-                        var xMid: number;
-                        var shapes = font.generateShapes( danmaku.danmakuData.content.text, 100, 1 );
-                        danmaku.geometry = new THREE.ShapeBufferGeometry( shapes );
-                        danmaku.geometry.computeBoundingBox();
-                        xMid = - 0.5 * ( danmaku.geometry.boundingBox.max.x - danmaku.geometry.boundingBox.min.x );
-                        danmaku.geometry.translate( xMid, 0, 0 );
-                        danmaku.mesh = new THREE.Mesh( danmaku.geometry, danmaku.material );
-                        this.scene.add( danmaku.mesh );
-                    })
-                    danmaku.isInited = true;
-                }
-                let opacityRate: number = danmaku.opacitySpeed * (this.timeDiff / 1000);
-                danmaku.material.opacity -= opacityRate;
-                danmaku.totalShowTime += this.timeDiff;
-                if (
-                    danmaku.totalShowTime / 1000 >= danmaku.delayTime &&
-                    danmaku.totalShowTime / 1000 <= danmaku.delayTime + danmaku.animateTime
-                ) {
-                    let xRate: number = danmaku.xSpeed * (this.timeDiff / 1000);
-                    let yRate: number = danmaku.ySpeed * (this.timeDiff / 1000);
-                    danmaku.x -= xRate;
-                    danmaku.y += yRate;
-                    danmaku.animate();
-                }
-                if (danmaku.totalShowTime / 1000 >= danmaku.duration) {
-                    danmaku.renderFlag = true;
-                    this.scene.remove(danmaku.mesh);
-                }
-            }
-        }
-        this.renderer.render(this.scene, this.perspectiveCamera);
+        this.danmakuArray = this.danmakuDataArray.map(danmaku => new ThreeRender(danmaku, this));
     }
 
     render(): void {
         this.timeDiffCompute();
-        // this.danmakuRender();
-        this.loadText();
+        this.danmakuRender();
         if (!this.video.paused) {
             requestAnimationFrame(this.render.bind(this));
         } else {
@@ -291,15 +258,16 @@ class ThreeManager{
     }
 
     danmakuRender(): void {
-        for (let i = 0, len = this.danmakuArray.length; i < len; i++) {
-            let danmaku = this.danmakuArray[i] as ThreeRender;
+        for(let i = 0; i < this.danmakuArray.length ; i++){
+            let danmaku = this.danmakuArray[i];
             if (!danmaku.renderFlag && this.video.currentTime >= danmaku.danmakuData.playTime) {
                 if (!danmaku.isInited) {
                     danmaku.init();
                     danmaku.isInited = true;
                 }
                 let opacityRate: number = danmaku.opacitySpeed * (this.timeDiff / 1000);
-                danmaku.material.opacity -= opacityRate;
+                danmaku.textMaterial.opacity -= opacityRate;
+                danmaku.lineMaterial.opacity -= opacityRate;
                 danmaku.totalShowTime += this.timeDiff;
                 if (
                     danmaku.totalShowTime / 1000 >= danmaku.delayTime &&
@@ -311,9 +279,20 @@ class ThreeManager{
                     danmaku.y += yRate;
                     danmaku.animate();
                 }
+                if(danmaku.totalShowTime / 1000 >= danmaku.delayTime + danmaku.animateTime && danmaku.totalShowTime <= danmaku.duration){
+                    danmaku.x = - this.renderCanvasWidth / 2 + danmaku.danmakuData.content.endX;
+                    danmaku.y = this.renderCanvasHeight / 2 - danmaku.danmakuData.content.endY;
+                    danmaku.animate();
+                }
                 if (danmaku.totalShowTime / 1000 >= danmaku.duration) {
                     danmaku.renderFlag = true;
                     this.scene.remove(danmaku.groupParent);
+                    danmaku.textGeometrys.forEach(textGeometry => {
+                        textGeometry.dispose()
+                    })
+                    danmaku.lineGeometrys.forEach(linegeometry => {
+                        linegeometry.dispose();
+                    })
                 }
             }
         }
@@ -339,7 +318,8 @@ class ThreeManager{
                 danmaku.init();
                 let diffTime: number = currentTime - danmaku.danmakuData.playTime;
                 let opacityRate: number = danmaku.opacitySpeed * diffTime;
-                danmaku.material.opacity -= opacityRate;
+                danmaku.textMaterial.opacity -= opacityRate;
+                danmaku.lineMaterial.opacity -= opacityRate;
                 danmaku.totalShowTime = diffTime * 1000;
                 let animationTime: number;
                 if (diffTime - danmaku.delayTime <= danmaku.animateTime) {
@@ -359,146 +339,88 @@ class ThreeManager{
         }
         this.renderer.render(this.scene, this.perspectiveCamera);
     }
+
+    // textGeometry绘制文字模型
+    textGeometry(): void{
+        this.textFontLoader.load('fonts/SimHei_Regular.json', font => {
+            let defaultOptions = {
+                font: font,
+                height: 0,
+                curveSegments: 12,
+                bevelEnabled: false
+            };
+            for(let i = 0; i < this.danmakuArray.length; i++){
+                let danmaku = this.danmakuArray[i];
+                let textOption = {
+                    size: danmaku.danmakuData.fontSize
+                };
+                textOption = loader.assign(defaultOptions, textOption);
+                let textHeight: number;
+                let initY = 0;
+                let textGroup = new THREE.Object3D();
+                let texts = danmaku.danmakuData.content.text.split('\r');
+                for(let i = 0; i < texts.length; i++){
+                    if(texts[i]){
+                        let textGeometry = new THREE.TextBufferGeometry(texts[i], textOption);
+                        textGeometry.computeBoundingBox();
+                        textHeight = textGeometry.boundingBox.max.y - textGeometry.boundingBox.min.y;
+                        let textMesh = new THREE.Mesh(textGeometry, danmaku.textMaterial);
+                        textMesh.position.set(0, -textHeight - initY, 0);
+                        textGroup.add(textMesh);
+                        danmaku.textGeometrys.push(textGeometry);
+                        danmaku.textMeshs.push(textMesh);
+                        initY += textHeight;
+                    }
+                }
+                danmaku.groupParent.add(textGroup);
+            }
+            console.log('success');
+        });
+    }
+
+    // shapeGeometry绘制文字模型
+    shapeGeometry(): void{
+        this.textFontLoader.load('fonts/SimHei_Regular.json', font => {
+            let defaultOptions = {
+                font: font,
+                height: 0,
+                curveSegments: 12,
+                bevelEnabled: false
+            };
+            for(let i = 0; i < this.danmakuArray.length; i++){
+                let danmaku = this.danmakuArray[i];
+                let textOption = {
+                    size: danmaku.danmakuData.fontSize
+                };
+                textOption = loader.assign(defaultOptions, textOption);
+                let textHeight: number;
+                let texts = danmaku.danmakuData.content.text.split('\r');
+                let initY: number = 0;
+                let textGroup = new THREE.Object3D();
+                for(let i = 0; i < texts.length; i++){
+                    if(texts[i]){
+                        let shapes = font.generateShapes( texts[i], danmaku.danmakuData.fontSize, 1 );
+                        let textGeometry = new THREE.ShapeBufferGeometry( shapes );
+                        textGeometry.computeBoundingBox();
+                        textHeight = textGeometry.boundingBox.max.y - textGeometry.boundingBox.min.y;
+                        let textMesh = new THREE.Mesh( textGeometry, danmaku.textMaterial );
+                        textMesh.position.set(0, -textHeight - initY, 0);
+                        textGroup.add(textMesh);
+                        danmaku.textGeometrys.push(textGeometry);
+                        danmaku.textMeshs.push(textMesh);
+                        initY += textHeight;
+                    }
+                }
+                danmaku.groupParent.add(textGroup);
+            }
+        })
+    }
 }
-
-// class ThreeRender{
-//     danmakuData: IDanmakuDataInterface;
-//     manager: ThreeManager;
-//     isInited: boolean = false;                      // 是否初始化
-//     width: number = 0;                              // 文字宽度
-//     height: number = 0;                             // 文字高度
-//     x: number;                                      // x轴位移
-//     y: number;                                      // y轴位移
-//     renderFlag: boolean = false;                    // 渲染标识
-//     canvasWidth: number;                            // 纹理宽度
-//     canvasHeight: number;                           // 纹理高度
-//     canvas: HTMLCanvasElement = document.createElement("canvas");
-//     totalShowTime: number = 0;                      // 显示时间
-//     opacitySpeed: number = 0;                       // 透明度变化速度
-//     xSpeed: number = 0;                             // x轴位移变化速度
-//     ySpeed: number = 0;                             // y轴位移变化速度
-//     duration: number;
-//     animateTime: number;                            // 运动时间
-//     delayTime: number;        
-//     texture: THREE.Texture;
-//     material: THREE.MeshBasicMaterial;
-//     geometry: THREE.PlaneGeometry;
-//     mesh: THREE.Mesh;
-//     groupParent: THREE.Object3D = new THREE.Object3D();
-
-//     constructor(danmakuData: IDanmakuDataInterface, manager: ThreeManager){
-//         this.danmakuData = danmakuData;
-//         this.manager = manager;
-//         this.duration = this.danmakuData.content.duration;
-//         this.animateTime = this.danmakuData.content.aTime / 1000;
-//         this.delayTime = this.danmakuData.content.delay / 1000;
-//         this.opacitySpeed =
-//             (this.danmakuData.content.startOpacity -
-//                 this.danmakuData.content.endOpacity) /
-//             this.duration;
-//         this.xSpeed =
-//             (this.danmakuData.content.startX -
-//                 this.danmakuData.content.endX) /
-//             this.animateTime;
-//         this.ySpeed =
-//             (this.danmakuData.content.startY -
-//                 this.danmakuData.content.endY) /
-//             this.animateTime;
-//         let preNode = document.createElement("pre");
-//         let preCssText = `display: inline-block; text-align: left; font: bold ${this.danmakuData.fontSize}px/1.125 ${
-//             this.danmakuData.content.family
-//         }, Arial, Helvetica, sans-serif;`;
-//         preNode.style.cssText = preCssText;
-//         preNode.innerHTML = this.danmakuData.content.text;
-//         document.body.appendChild(preNode);
-//         this.width = preNode.clientWidth;
-//         this.height = preNode.clientHeight;
-//         this.canvasWidth = THREE.Math.ceilPowerOfTwo(this.width);
-//         this.canvasHeight = THREE.Math.ceilPowerOfTwo(this.height);
-//         this.canvas.width = this.canvasWidth;
-//         this.canvas.height = this.canvasHeight;
-//         document.body.appendChild(this.canvas);
-//         let context = this.canvas.getContext("2d") as CanvasRenderingContext2D;
-//         context.textAlign = "left";
-//         context.textBaseline = "hanging";
-//         context.font = `bold ${this.danmakuData.fontSize}px ${
-//             this.danmakuData.content.family
-//         }`;
-//         if (this.danmakuData.color === "#000000") {
-//             context.shadowColor = "rgb(68, 68, 68)";
-//         } else {
-//             context.shadowColor = "rgb(0, 0, 0)";
-//         }
-//         context.shadowBlur = 2;
-//         context.fillStyle = this.danmakuData.color;
-//         this.wrapText(context);
-//         document.body.removeChild(preNode);
-//         document.body.removeChild(this.canvas);
-//         this.texture = new THREE.Texture(this.canvas);
-//         this.material = new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
-//         this.geometry = new THREE.PlaneGeometry(this.canvasWidth, this.canvasHeight);
-//         this.mesh = new THREE.Mesh(this.geometry, this.material);
-//         this.texture.needsUpdate = true;
-//     }
-
-//     wrapText(context: CanvasRenderingContext2D): void {
-//         let lineText = this.danmakuData.content.text.split("\r");
-//         let lineTextArray = [];
-//         for (let i = 0, len = lineText.length; i < len; i++) {
-//             if (lineText[i]) lineTextArray.push(lineText[i]);
-//         }
-//         let startX: number = (this.canvasWidth - this.width) / 2;
-//         let startY: number = (this.canvasHeight - this.danmakuData.fontSize * lineTextArray.length) / 2;
-//         for (let i = 0, len = lineTextArray.length; i < len; i++) {
-//             if (lineTextArray[i] === "&amp;") {
-//                 lineTextArray[i] = "&";
-//             }
-//             let patternOne = /\/&gt;/g,
-//                 patternTwo = /&lt;/g;
-//             if (patternOne.test(lineTextArray[i]) || patternTwo.test(lineTextArray[i])) {
-//                 lineTextArray[i] = lineTextArray[i].replace(/\/&gt;/g, "/>").replace(/&lt;/g, "<");
-//             }
-//             context.fillText(lineTextArray[i], startX, startY, this.width);
-//             startY += this.danmakuData.fontSize;
-//         }
-//     }
-
-//     init() {
-//         this.material.opacity = this.danmakuData.content.startOpacity;
-//         this.x =
-//             -this.manager.renderCanvasWidth / 2 + this.danmakuData.content.startX;
-//         this.y =
-//             this.manager.renderCanvasHeight / 2 - this.danmakuData.content.startY;
-//         this.groupParent.position.set(this.x, this.y, 0);
-//         this.groupParent.add(this.mesh);
-//         this.mesh.position.set(this.width / 2, -this.height / 2, 0);
-//         this.manager.scene.add(this.groupParent);
-//         this.groupParent.rotation.reorder("XZY");
-//         this.groupParent.rotation.set(
-//             0,
-//             -THREE.Math.degToRad(this.danmakuData.content.rotateY),
-//             -THREE.Math.degToRad(this.danmakuData.content.rotateZ),
-//         );
-//     }
-
-//     animate(): void {
-//         this.groupParent.position.set(this.x, this.y, 0);
-//         this.mesh.position.set(this.width / 2, -this.height / 2, 0);
-//         this.groupParent.rotation.reorder("XZY");
-//         this.groupParent.rotation.set(
-//             0,
-//             -THREE.Math.degToRad(this.danmakuData.content.rotateY),
-//             -THREE.Math.degToRad(this.danmakuData.content.rotateZ),
-//         );
-//     }
-// }
 
 class ThreeRender{
     danmakuData: IDanmakuDataInterface;
     manager: ThreeManager;
     isInited: boolean = false;                      // 是否初始化
-    width: number = 0;                              // 文字宽度
-    height: number = 0;                             // 文字高度
     x: number;                                      // x轴位移
     y: number;                                      // y轴位移
     renderFlag: boolean = false;                    // 渲染标识
@@ -510,9 +432,12 @@ class ThreeRender{
     animateTime: number;                            // 运动时间
     delayTime: number;        
     texture: THREE.Texture;
-    material: THREE.MeshBasicMaterial;
-    geometry: THREE.ShapeBufferGeometry;
-    mesh: THREE.Mesh;
+    textMaterial: THREE.MeshBasicMaterial;
+    textGeometrys: THREE.BufferGeometry[] = [];
+    textMeshs: THREE.Mesh[] = [];
+    lineMaterial: THREE.LineBasicMaterial;
+    lineGeometrys: THREE.BufferGeometry[] = [];
+    lineMeshs: THREE.Line[] = [];
     groupParent: THREE.Object3D = new THREE.Object3D();
 
     constructor(danmakuData: IDanmakuDataInterface, manager: ThreeManager){
@@ -533,36 +458,41 @@ class ThreeRender{
             (this.danmakuData.content.startY -
                 this.danmakuData.content.endY) /
             this.animateTime;
-        let preNode = document.createElement("pre");
-        let preCssText = `display: inline-block; text-align: left; font: bold ${this.danmakuData.fontSize}px/1.125 ${
-            this.danmakuData.content.family
-        }, Arial, Helvetica, sans-serif;`;
-        preNode.style.cssText = preCssText;
-        preNode.innerHTML = this.danmakuData.content.text;
-        document.body.appendChild(preNode);
-        this.width = preNode.clientWidth;
-        this.height = preNode.clientHeight;
-        document.body.removeChild(preNode);
-        this.material = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, color: this.danmakuData.color, side: THREE.DoubleSide });
+        this.textMaterial = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, color: this.danmakuData.color, side: THREE.DoubleSide });
+        let lineColor: string;
+        if(this.danmakuData.color === '#000000'){
+            lineColor = '#686868';
+        }else{
+            lineColor = '#000000';
+        }
+        this.lineMaterial = new THREE.LineBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, color: lineColor, side: THREE.DoubleSide });
     }
 
     init() {
-        this.material.opacity = this.danmakuData.content.startOpacity;
+        this.textMaterial.opacity = this.danmakuData.content.startOpacity;
+        this.lineMaterial.opacity = this.danmakuData.content.startOpacity;
         this.x =
             -this.manager.renderCanvasWidth / 2 + this.danmakuData.content.startX;
         this.y =
             this.manager.renderCanvasHeight / 2 - this.danmakuData.content.startY;
+        this.groupParent.position.set(this.x, this.y, 0);
+        this.manager.scene.add(this.groupParent);
+        this.groupParent.rotation.reorder("XZY");
+        this.groupParent.rotation.set(
+            0,
+            -THREE.Math.degToRad(this.danmakuData.content.rotateY),
+            -THREE.Math.degToRad(this.danmakuData.content.rotateZ),
+        );
     }
 
     animate(): void {
-        // this.groupParent.position.set(this.x, this.y, 0);
-        // this.mesh.position.set(this.width / 2, -this.height / 2, 0);
-        // this.groupParent.rotation.reorder("XZY");
-        // this.groupParent.rotation.set(
-        //     0,
-        //     -THREE.Math.degToRad(this.danmakuData.content.rotateY),
-        //     -THREE.Math.degToRad(this.danmakuData.content.rotateZ),
-        // );
+        this.groupParent.position.set(this.x, this.y, 0);
+        this.groupParent.rotation.reorder("XZY");
+        this.groupParent.rotation.set(
+            0,
+            -THREE.Math.degToRad(this.danmakuData.content.rotateY),
+            -THREE.Math.degToRad(this.danmakuData.content.rotateZ),
+        );
     }
 }
 
