@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-interface IParticleData {
+interface IPixelData {
     x: number;
     y: number;
     style: string;
@@ -13,7 +13,7 @@ class ParticleManager{
     perspectiveCamera: THREE.PerspectiveCamera;
     scene: THREE.Scene;
     renderer: THREE.WebGLRenderer;
-    particleData: ParticleData;
+    pixelData: PixelData;
     particleOfLeft = [];
     particleOfRight = [];
     prevTime: number;
@@ -26,7 +26,7 @@ class ParticleManager{
         this.renderCanvas.width = this.renderCanvasWidth;
         this.renderCanvas.height = this.renderCanvasHeight;
         this.renderer = new THREE.WebGLRenderer({
-            antialias: false,
+            antialias: true,
             canvas: this.renderCanvas,
             alpha: true
         });
@@ -40,29 +40,33 @@ class ParticleManager{
             3000,
         );
         this.perspectiveCamera.position.z = Math.min(this.renderCanvasWidth, this.renderCanvasHeight) / 2;
-        this.particleData = new ParticleData();
+        this.pixelData = new PixelData();
         this.staticCanvas();
-        const particleDataOfLeft = this.particleData.leftImgDataList;
-        const particleDataOfRight = this.particleData.rightImgDataList;
-        for(let i = particleDataOfLeft.length-1; i > -1; i--){
+        const pixelDataOfLeft = this.pixelData.secondImgDataList;
+        const pixelDataOfRight = this.pixelData.firstImgDataList;
+        for(let i = 0; i < pixelDataOfLeft.length; i++){
             this.particleOfLeft[i] = [];
-            for(let j = 0; j < particleDataOfLeft[i].length; j++){
-                this.particleOfLeft[i].push(new Particle(this, particleDataOfLeft[i][j], i * 30 + j * Math.random()*6 + 400));
+            for(let j = 0; j < pixelDataOfLeft[i].length; j++){
+                const particle = new Particle(pixelDataOfLeft[i][j], i * 5 + j * Math.random() * 30);
+                this.scene.add(particle.particle);
+                this.particleOfLeft[i].push(particle);
             }
         }
-        for(let i = 0; i < particleDataOfRight.length; i++){
+        for(let i = 0; i < pixelDataOfRight.length; i++){
             this.particleOfRight[i] = [];
-            for(let j = 0; j < particleDataOfRight[i].length; j++){
-                this.particleOfRight[i].push(new Particle(this, particleDataOfRight[i][j], i * 20 + j * Math.random()*6));
+            for(let j = 0; j < pixelDataOfRight[i].length; j++){
+                const particle = new Particle(pixelDataOfRight[i][j], i * 20 + j * Math.random()*6);
+                this.scene.add(particle.particle);
+                this.particleOfRight[i].push(particle);
             }
         }
         this.renderer.render(this.scene, this.perspectiveCamera);
     }
 
     staticCanvas(): void {
-        const width = this.particleData.width;
-        const height = this.particleData.height;
-        const texture = new THREE.Texture(this.particleData.canvas);
+        const width = this.pixelData.width;
+        const height = this.pixelData.height;
+        const texture = new THREE.Texture(this.pixelData.canvas);
         texture.needsUpdate = true;
         const planeGeometry = new THREE.PlaneBufferGeometry(width, height);
         const planeMaterial = new THREE.MeshBasicMaterial({
@@ -91,6 +95,9 @@ class ParticleManager{
         this.particleRender(this.particleOfLeft)
         if(this.paused) {
             requestAnimationFrame(this.render.bind(this));
+        } else {
+            this.prevTime = 0;
+            this.timeDiff = 0;
         }
         this.renderer.render(this.scene, this.perspectiveCamera);
     }
@@ -121,21 +128,23 @@ class ParticleManager{
     }
 }
 
-class ParticleData {
+class PixelData {
+    derection: string;
     img: HTMLImageElement;
     canvas: HTMLCanvasElement;
     width: number;
     height: number;
-    leftImgDataList = [];
-    rightImgDataList = [];
-    constructor() {
+    firstImgDataList = [];
+    secondImgDataList = [];
+    constructor(deraction?: string) {
+        this.derection = deraction? deraction : 'right-left';
         this.img = document.getElementsByTagName('img')[0];
         this.width = this.img.width;
         this.height = this.img.height;
-        this.init();
+        this.pixelInit();
     }
 
-    init() {
+    pixelInit() {
         this.canvas = document.createElement('canvas');
         this.canvas.className = 'test';
         this.canvas.width = this.width;
@@ -143,36 +152,36 @@ class ParticleData {
         const ctx = this.canvas.getContext('2d');
         ctx.drawImage(this.img, 0, 0, this.width, this.height);
         const imgData = ctx.getImageData(0, 0, this.width, this.height);
-        this.calculate(this.width, this.height, imgData);
+        this.calculatePixel(this.width, this.height, imgData);
         ctx.clearRect(0, 0, this.width, this.height);
-        for(let i = 0; i < this.rightImgDataList.length; i++) {
-            for(let j = 0; j < this.rightImgDataList[i].length; j++){
-                let particle = this.rightImgDataList[i][j];
+        for(let i = 0; i < this.secondImgDataList.length; i++) {
+            for(let j = 0; j < this.secondImgDataList[i].length; j++){
+                let particle = this.secondImgDataList[i][j];
                 ctx.fillStyle = particle.style;
                 ctx.fillRect(particle.x, particle.y, 1, 1);
             } 
-        } 
-        for(let i = 0; i < this.leftImgDataList.length; i++) {
-            for(let j = 0; j < this.leftImgDataList[i].length; j++){
-                let particle = this.leftImgDataList[i][j];
+        }
+        for(let i = 0; i < this.firstImgDataList.length; i++) {
+            for(let j = 0; j < this.firstImgDataList[i].length; j++){
+                let particle = this.firstImgDataList[i][j];
                 ctx.fillStyle = particle.style;
                 ctx.fillRect(particle.x, particle.y, 1, 1);
             }
         }
     }
 
-    calculate(w: number, h: number, imgData: ImageData) {
-        let left_index = 0;
-        let right_index = 0;
-		const cols = w, rows = h;
-		var pos = 0;
-		var data = imgData.data;
+    calculatePixel(w: number, h: number, imgData: ImageData) {
+        let first_index = 0;
+        let second_index = 0;
+		let cols = w, rows = h;
+		let pos = 0;
+		let data = imgData.data;
 		for(var i = cols / 2 - 1; i >= 0; i--) {
-            this.leftImgDataList[left_index] = [];
+            this.secondImgDataList[second_index] = [];
 			for(var j = 0; j < rows; j++) {
 				pos = (j*w + i)*4;
 				if(data[pos+3] > 0){
-					let particle: IParticleData;
+					let particle: IPixelData;
                     let style = `rgba(${data[pos]}, ${data[pos+1]}, ${data[pos+2]}, ${data[pos+3]/255})`;
                     let color = `rgb(${data[pos]}, ${data[pos+1]}, ${data[pos+2]})`;
                     let opacity = data[pos+3]/255;
@@ -183,18 +192,18 @@ class ParticleData {
                         color: color,
                         opacity: opacity
                     }
-					this.leftImgDataList[left_index].push(particle);
+					this.secondImgDataList[second_index].push(particle);
 				}
             }
-            left_index++;
+            second_index++;
         }
-        this.leftImgDataList = this.leftImgDataList.filter(item => item.length > 0);
+        this.secondImgDataList = this.secondImgDataList.filter(item => item.length > 0);
         for(var i = cols - 1; i >= cols / 2; i--) {
-            this.rightImgDataList[right_index] = [];
+            this.firstImgDataList[first_index] = [];
 			for(var j = 0; j < rows; j++) {
 				pos = (j*w + i)*4;
 				if(data[pos+3] > 0){
-					let particle: IParticleData;
+					let particle: IPixelData;
 					let style = `rgba(${data[pos]}, ${data[pos+1]}, ${data[pos+2]}, ${data[pos+3]/255})`;
                     let color = `rgb(${data[pos]}, ${data[pos+1]}, ${data[pos+2]})`;
                     let opacity = data[pos+3]/255;
@@ -205,27 +214,25 @@ class ParticleData {
                         color: color,
                         opacity: opacity
                     }
-					this.rightImgDataList[right_index].push(particle);
+					this.firstImgDataList[first_index].push(particle);
 				}
             }
-            right_index++;
+            first_index++;
         }
-        this.rightImgDataList = this.rightImgDataList.filter(item => item.length > 0);
+        this.firstImgDataList = this.firstImgDataList.filter(item => item.length > 0);
 	}
 }
 
 class Particle {
     duration: number = 2000;
     sOpacity: number;
-    particleManager: ParticleManager;
-    particleData: IParticleData;
+    particleData: IPixelData;
     particleGeometry: THREE.BufferGeometry;
     particleMaterial: THREE.PointsMaterial;
     particle: THREE.Points;
     showTime: number = 0;
     delay: number;
-    constructor(particleManager: ParticleManager, particleData: IParticleData, delay: number) {
-        this.particleManager = particleManager;
+    constructor(particleData: IPixelData, delay: number) {
         this.particleData = particleData;
         this.delay = delay;
         this.particleGeometry = new THREE.BufferGeometry();
@@ -236,7 +243,6 @@ class Particle {
             transparent: true,
         })
         this.particle = new THREE.Points(this.particleGeometry, this.particleMaterial);
-        this.particleManager.scene.add(this.particle);
         this.sOpacity = this.particleData.opacity / this.duration;
     }
 }
